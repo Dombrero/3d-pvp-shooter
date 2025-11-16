@@ -58,7 +58,23 @@ directionalLight.shadow.camera.top = 20;
 directionalLight.shadow.camera.bottom = -20;
 scene.add(directionalLight);
 
-// First-Person-Kamera Position
+// Eigener Spieler (lokale Figur)
+let localPlayer = null;
+
+function createLocalPlayer() {
+    const geometry = new THREE.CylinderGeometry(0.3, 0.3, 1.6, 8);
+    const material = new THREE.MeshStandardMaterial({ color: 0x44ff44 });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0.8, 0);
+    mesh.castShadow = true;
+    scene.add(mesh);
+    return mesh;
+}
+
+// Spieler-Figur erstellen
+localPlayer = createLocalPlayer();
+
+// Kamera-Position (First-Person auf Augenhöhe der Figur)
 camera.position.set(0, 1.6, 0);
 
 // Maus-Look
@@ -174,7 +190,8 @@ class Enemy {
     update() {
         if (!this.alive) return;
         
-        const playerPos = camera.position;
+        // Feind läuft zur Spieler-Figur
+        const playerPos = localPlayer ? localPlayer.position : camera.position;
         const enemyPos = this.mesh.position;
         
         const dx = playerPos.x - enemyPos.x;
@@ -270,7 +287,7 @@ function shoot() {
     if (multiplayer.isConnected && multiplayer.connection) {
         multiplayer.connection.send({
             type: 'shoot',
-            position: camera.position.toArray(),
+            position: localPlayer ? localPlayer.position.toArray() : camera.position.toArray(),
             rotation: [pitch, yaw]
         });
     }
@@ -285,9 +302,16 @@ function createMuzzleFlash() {
     });
     const flash = new THREE.Mesh(flashGeometry, flashMaterial);
     
-    const flashPos = new THREE.Vector3(0, -0.2, -0.5);
-    flashPos.applyQuaternion(camera.quaternion);
-    flash.position.copy(camera.position).add(flashPos);
+    // Mündungsfeuer vor der Figur
+    if (localPlayer) {
+        const flashPos = new THREE.Vector3(0, 0.5, 0.5);
+        flashPos.applyQuaternion(localPlayer.quaternion);
+        flash.position.copy(localPlayer.position).add(flashPos);
+    } else {
+        const flashPos = new THREE.Vector3(0, -0.2, -0.5);
+        flashPos.applyQuaternion(camera.quaternion);
+        flash.position.copy(camera.position).add(flashPos);
+    }
     
     scene.add(flash);
     
@@ -500,7 +524,9 @@ function handleNetworkMessage(data) {
         case 'playerUpdate':
             if (multiplayer.otherPlayer) {
                 multiplayer.otherPlayer.position.set(...data.position);
-                multiplayer.otherPlayer.rotation.set(...data.rotation);
+                // Rotation aus Yaw und Pitch setzen
+                multiplayer.otherPlayer.rotation.y = data.rotation[0];
+                multiplayer.otherPlayer.rotation.x = data.rotation[1];
             }
             break;
         case 'shoot':
@@ -529,13 +555,13 @@ let lastUpdateTime = 0;
 const updateInterval = 50; // 20 FPS für Netzwerk
 
 function sendPlayerUpdate() {
-    if (multiplayer.isConnected && multiplayer.connection) {
+    if (multiplayer.isConnected && multiplayer.connection && localPlayer) {
         const now = Date.now();
         if (now - lastUpdateTime > updateInterval) {
             multiplayer.connection.send({
                 type: 'playerUpdate',
-                position: camera.position.toArray(),
-                rotation: [pitch, yaw]
+                position: localPlayer.position.toArray(),
+                rotation: [localPlayer.rotation.y, localPlayer.rotation.x]
             });
             lastUpdateTime = now;
         }
@@ -566,6 +592,9 @@ function resetGame() {
     gameState.gameOver = false;
     gameState.gameStarted = false;
     
+    if (localPlayer) {
+        localPlayer.position.set(0, 0.8, 0);
+    }
     camera.position.set(0, 1.6, 0);
     pitch = 0;
     yaw = 0;
@@ -633,35 +662,53 @@ function animate() {
         return;
     }
     
-    // Kamera-Rotation
+    // Kamera-Rotation (für Third-Person)
     camera.rotation.order = 'YXZ';
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
     
-    // Bewegung
-    direction.set(0, 0, 0);
-    
-    if (keys['w']) direction.z -= 1;
-    if (keys['s']) direction.z += 1;
-    if (keys['a']) direction.x -= 1;
-    if (keys['d']) direction.x += 1;
-    
-    direction.normalize();
-    direction.multiplyScalar(moveSpeed);
-    
-    const cameraDirection = new THREE.Vector3();
-    camera.getWorldDirection(cameraDirection);
-    cameraDirection.y = 0;
-    cameraDirection.normalize();
-    
-    const right = new THREE.Vector3();
-    right.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0));
-    
-    const moveVector = new THREE.Vector3();
-    moveVector.addScaledVector(cameraDirection, -direction.z);
-    moveVector.addScaledVector(right, direction.x);
-    
-    camera.position.add(moveVector);
+    // Bewegung der Figur
+    if (localPlayer) {
+        direction.set(0, 0, 0);
+        
+        if (keys['w']) direction.z -= 1;
+        if (keys['s']) direction.z += 1;
+        if (keys['a']) direction.x -= 1;
+        if (keys['d']) direction.x += 1;
+        
+        direction.normalize();
+        direction.multiplyScalar(moveSpeed);
+        
+        // Bewegung relativ zur Kamera-Richtung
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+        cameraDirection.y = 0;
+        cameraDirection.normalize();
+        
+        const right = new THREE.Vector3();
+        right.crossVectors(cameraDirection, new THREE.Vector3(0, 1, 0));
+        
+        const moveVector = new THREE.Vector3();
+        moveVector.addScaledVector(cameraDirection, -direction.z);
+        moveVector.addScaledVector(right, direction.x);
+        
+        // Figur bewegen
+        localPlayer.position.add(moveVector);
+        
+        // Figur rotiert in Bewegungsrichtung
+        if (moveVector.length() > 0) {
+            localPlayer.lookAt(
+                localPlayer.position.x + moveVector.x,
+                localPlayer.position.y,
+                localPlayer.position.z + moveVector.z
+            );
+        }
+        
+        // First-Person-Kamera folgt der Figur (auf Augenhöhe)
+        camera.position.x = localPlayer.position.x;
+        camera.position.y = localPlayer.position.y + 0.8; // Augenhöhe
+        camera.position.z = localPlayer.position.z;
+    }
     
     // Netzwerk-Updates senden
     sendPlayerUpdate();
@@ -671,7 +718,9 @@ function animate() {
         if (enemy.alive) {
             enemy.update();
             
-            const distance = camera.position.distanceTo(enemy.mesh.position);
+            // Kollision mit Spieler-Figur
+            const playerPos = localPlayer ? localPlayer.position : camera.position;
+            const distance = playerPos.distanceTo(enemy.mesh.position);
             if (distance < 1.5) {
                 gameState.health -= 0.5;
                 updateUI();
