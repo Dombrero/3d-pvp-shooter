@@ -1,0 +1,23 @@
+{
+  "name": "3d-ego-shooter",
+  "version": "1.0.0",
+  "description": "Ein webbasierter 3D Ego-Shooter mit Three.js",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx http-server -p 8080 -o",
+    "dev": "npx http-server -p 8080 -o"
+  },
+  "keywords": [
+    "3d",
+    "fps",
+    "shooter",
+    "game",
+    "three.js",
+    "webgl"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
