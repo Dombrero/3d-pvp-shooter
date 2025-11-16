@@ -553,6 +553,7 @@ function endGame() {
     gameState.gameOver = true;
     gameState.gameStarted = false;
     document.exitPointerLock();
+    document.body.classList.remove('game-active');
     document.getElementById('finalKills').textContent = gameState.score;
     document.getElementById('gameOver').style.display = 'block';
 }
@@ -568,6 +569,8 @@ function resetGame() {
     camera.position.set(0, 1.6, 0);
     pitch = 0;
     yaw = 0;
+    
+    document.body.classList.remove('game-active');
     
     gameState.enemies.forEach(enemy => {
         if (enemy.alive) {
@@ -590,6 +593,7 @@ function startGame() {
     gameState.isMultiplayer = multiplayer.isConnected;
     document.getElementById('startScreen').style.display = 'none';
     document.getElementById('lobbyScreen').style.display = 'none';
+    document.body.classList.add('game-active');
     
     // Sende Start-Signal an anderen Spieler
     if (multiplayer.isHost && multiplayer.isConnected && multiplayer.connection) {
